@@ -2,19 +2,19 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
-int main(void) {
+void init_ports(void){
 
     /* -----------------------------------------------------------------
      * | PINB7 | PINB6 | PINB5 | PINB4 | PINB3 | PINB2 | PINB1 | PINB0 |
      * -----------------------------------------------------------------
      * |  N/A  |  N/A  |  SCK  |  MISO |  MOSI |  N/A  | USBEN |  USB4 |
      * -----------------------------------------------------------------
-     * |   IN  |   IN  |   IN  |  OUT  |   IN  |   IN  |  OUT  |  OUT  |
+     * |   IN  |   IN  |   IN  |   IN  |   IN  |   IN  |  OUT  |  OUT  |
      * -----------------------------------------------------------------
      */
 
-    DDRB = 0b00010011 & 0x13;
-    PORTB = 0b00000000 & 0x00;
+    DDRB = 0b00000011 & 0x03;
+    PORTB = 0b00000010 & 0x02;
 
     /* -----------------------------------------------------------------
      * |  N/A  | PINC6 | PINC5 | PINC4 | PINC3 | PINC2 | PINC1 | PINC0 |
@@ -25,7 +25,7 @@ int main(void) {
      * -----------------------------------------------------------------
      */
 
-    DDRC = 0b00000001 & 0x01;
+    DDRC = 0b00111110 & 0x3E;
     PORTC = 0b00000000 & 0x00;
 
     /* -----------------------------------------------------------------
@@ -76,37 +76,98 @@ int main(void) {
      */
 
     PCMSK2 = 0;
+
+}
+
+void select_led(int led){
+
+    /* zero LED pins */
+    PORTC &= 0b11000001 & 0xC1;
+
+    if(led >= 1 && led <= 5){
+        PORTC |= (1 << led);
+    }
+}
+
+void select_usb(int usb){
+
+    /*         -------------------------------
+     *         | su1 | su2 | su3 | su4 | ~OE |
+     *         |-----|-----|-----|-----|-----|
+     *         | PD5 | PD6 | PD7 | PB0 | PB1 |
+     * |-------|-----|-----|-----|-----|-----|
+     * | USB-1 |  0  |  0  |  0  |  0  |  0  |
+     * |-------|-----|-----|-----|-----|-----|
+     * | USB-2 |  1  |  0  |  0  |  0  |  0  |
+     * |-------|-----|-----|-----|-----|-----|
+     * | USB-3 |  x  |  1  |  0  |  0  |  0  |
+     * |-------|-----|-----|-----|-----|-----|
+     * | USB-4 |  x  |  x  |  1  |  0  |  0  |
+     * |-------|-----|-----|-----|-----|-----|
+     * | USB-5 |  x  |  x  |  x  |  1  |  0  |
+     * |-------|-----|-----|-----|-----|-----|
+     * | NONE  |  x  |  x  |  x  |  x  |  1  |
+     * |-------|-----|-----|-----|-----|-----|
+     *
+     */
+    
+    /* zero select & OE pins, i.e. ubsb-1 configuration */
+    PORTD &= 0b00011111 & 0x1F;
+    PORTB &= 0b11111100 & 0xFC;
+
+    switch(usb){
+
+        case 5:
+            PORTB |= 1 << 0;
+            break;
+
+        case 4:
+            PORTD |= 1 << 7;
+            break;
+
+        case 3:
+            PORTD |= 1 << 6;
+            break;
+
+        case 2:
+            PORTD |= 1 << 5;
+            break;
+
+        case 1:
+            /* do nothing */
+            break;
+
+        default:
+            /* pull OE high i.e. disable all usb multiplexers */
+            PORTB |= 1 << 1;
+            break;
+    }
+}
+
+int main(void){
  
+    init_ports();
+
     sei();
 
-    for ( ; ; ) asm("nop");
+    for( ; ; ) asm("nop");
 
     return 0;
 }
 
-ISR(PCINT1_vect) {
+ISR(PCINT1_vect){
 
-    static volatile uint8_t xUSBPin = 0;
+    static volatile uint8_t count = 0;
 
-    xUSBPin++;
+    /* select_usb(0) will pull OE high disabling all usb multiplexers */
+    select_usb(count % 6);
 
-    xUSBPin %= 5;
+    /* select_led(0) will disable all led lines */
+    select_led(count % 6);
 
-    PORTC = (1 << (xUSBPin + 1));
+    count++;
 
-    PORTD &= (0b00011111 & 0x1F);
-    PORTB &= (0b11111110 & 0xF7);
-
-    if ( xUSBPin == 4 ) {
-        PORTB |= 0x01;
-    }
-
-    if ( xUSBPin <= 3 && xUSBPin > 0 ){
-        PORTD |= (1 << (4 + xUSBPin));
-    }
-
-    _delay_ms(500);
+    _delay_ms(200);
 
     PCIFR |= (1 << PCIF1);
-
 }
